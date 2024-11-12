@@ -1,21 +1,26 @@
+using System;
 using Amazon.Lambda.Core;
-
-// Assembly attribute to enable the Lambda function's JSON input to be converted into a .NET class.
-[assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
-
-namespace EsepWebhook;
+using Newtonsoft.Json;
 
 public class Function
 {
-    
-    /// <summary>
-    /// A simple function that takes a string and does a ToUpper
-    /// </summary>
-    /// <param name="input">The event for the Lambda function handler to process.</param>
-    /// <param name="context">The ILambdaContext that provides methods for logging and describing the Lambda environment.</param>
-    /// <returns></returns>
-    public string FunctionHandler(string input, ILambdaContext context)
+    private static readonly HttpClient client = new HttpClient();
+    private const string SlackUrl = Environment.GetEnvironmentVariable("SLACK_URL");
+
+    public async Task FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
     {
-        return input.ToUpper();
+        foreach (var record in sqsEvent.Records)
+        {
+            var payload = JsonConvert.DeserializeObject<dynamic>(record.Body);
+            var issueUrl = payload.issue.html_url.ToString();
+
+            var slackMessage = new
+            {
+                text = $"A new issue was created: {issueUrl}"
+            };
+
+            var content = new StringContent(JsonConvert.SerializeObject(slackMessage), Encoding.UTF8, "application/json");
+            await client.PostAsync(SlackUrl, content);
+        }
     }
 }
