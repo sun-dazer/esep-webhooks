@@ -1,26 +1,37 @@
-using System;
+using System.Text;
 using Amazon.Lambda.Core;
 using Newtonsoft.Json;
 
+// Assembly attribute to enable the Lambda function's JSON input to be converted into a .NET class.
+[assembly: LambdaSerializer(typeof(Amazon.Lambda.Serialization.SystemTextJson.DefaultLambdaJsonSerializer))]
+
+namespace EsepWebhook;
+
 public class Function
 {
-    private static readonly HttpClient client = new HttpClient();
-    private const string SlackUrl = Environment.GetEnvironmentVariable("SLACK_URL");
-
-    public async Task FunctionHandler(SQSEvent sqsEvent, ILambdaContext context)
+    
+    /// <summary>
+    /// A simple function that takes a string and does a ToUpper
+    /// </summary>
+    /// <param name="input"></param>
+    /// <param name="context"></param>
+    /// <returns></returns>
+    public string FunctionHandler(object input, ILambdaContext context)
     {
-        foreach (var record in sqsEvent.Records)
+        context.Logger.LogInformation($"FunctionHandler received: {input}");
+
+        dynamic json = JsonConvert.DeserializeObject<dynamic>(input.ToString());
+        string payload = $"{{'text':'Issue Created: {json.issue.html_url}'}}";
+        
+        var client = new HttpClient();
+        var webRequest = new HttpRequestMessage(HttpMethod.Post, Environment.GetEnvironmentVariable("SLACK_URL"))
         {
-            var payload = JsonConvert.DeserializeObject<dynamic>(record.Body);
-            var issueUrl = payload.issue.html_url.ToString();
-
-            var slackMessage = new
-            {
-                text = $"A new issue was created: {issueUrl}"
-            };
-
-            var content = new StringContent(JsonConvert.SerializeObject(slackMessage), Encoding.UTF8, "application/json");
-            await client.PostAsync(SlackUrl, content);
-        }
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+    
+        var response = client.Send(webRequest);
+        using var reader = new StreamReader(response.Content.ReadAsStream());
+            
+        return reader.ReadToEnd();
     }
 }
